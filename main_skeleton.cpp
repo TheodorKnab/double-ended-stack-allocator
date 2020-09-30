@@ -79,39 +79,72 @@ public:
 	}
 
 	void* Allocate(size_t size, size_t alignment)
-	{ 
+	{
+#ifdef WITH_DEBUG_CANARIES
+
+
+		
+#endif
+
 		// If there is not enough memory, we return a nullptr
 		if (!FitsInAllocator(size + OFFSET_SIZE, alignment)) return nullptr;
 
+		uint32_t offset = reinterpret_cast<char*>(m_current) - reinterpret_cast<char*>(m_begin);
 		// Align address up with offset added, then revert offset so the actual user data is aligned
 		m_current = AlignUp(reinterpret_cast<char*>(m_current) + OFFSET_SIZE, alignment) - OFFSET_SIZE;
-		
 		void* allocated_address = reinterpret_cast<char*>(m_current) + OFFSET_SIZE;
-
 		
 		// Store offset in first bytes
-		uint32_t* m_currentUInt = reinterpret_cast<uint32_t*>(m_current);		
-		uint32_t offset = reinterpret_cast<char*>(m_current) - reinterpret_cast<char*>(m_begin);
-		*m_currentUInt = offset;
+		uint32_t* m_current_uint = reinterpret_cast<uint32_t*>(m_current);
+		*m_current_uint = offset;
 
 		//set m_current to new address
 		m_current = reinterpret_cast<char*>(m_current) + size + OFFSET_SIZE;
-		
+
 		return allocated_address;
 	}
 
-	void* AllocateBack(size_t size, size_t alignment) { return nullptr; }
+	void* AllocateBack(size_t size, size_t alignment)
+	{
+		// If there is not enough memory, we return a nullptr
+		if (!FitsInAllocator(size + OFFSET_SIZE, alignment)) return nullptr;
+
+		uint32_t offset = reinterpret_cast<char*>(m_end) - reinterpret_cast<char*>(m_current_back);
+
+		// Create space for the allocated object
+		m_current_back = reinterpret_cast<char*>(m_current_back) - size;
+		
+		// Align address down
+		m_current_back = AlignDown(reinterpret_cast<char*>(m_current_back), alignment);
+		void* allocated_address = reinterpret_cast<char*>(m_current_back);
+
+		// Store offset in first bytes
+		uint32_t* m_current_back_uint = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(m_current_back) - OFFSET_SIZE);
+		*m_current_back_uint = offset;
+
+		//set m_current_back to new address
+		m_current_back = m_current_back_uint;
+
+		return allocated_address;
+	}
 
 	void Free(void* memory)
 	{
 		// Frees the given memory block by looking up the previous address and shifting m_current to its position.
-		uint32_t offset_ptr = *(reinterpret_cast<uintptr_t*>(memory) - OFFSET_SIZE);
-		//m_current = m_begin + offset_ptr;
+		uint32_t offset_ptr = *(reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE));
+		m_current = reinterpret_cast<char*>(m_begin) + offset_ptr;		
 	}
 
-	void FreeBack(void* memory) {}
+	void FreeBack(void* memory)
+	{
+		uint32_t offset_ptr = *(reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE));
+		m_current_back = reinterpret_cast<char*>(m_end) - offset_ptr;
+	}
 
-	void Reset(void) {}
+	void Reset(void)
+	{
+		
+	}
 
 	~DoubleEndedStackAllocator(void) {}
 
@@ -152,8 +185,9 @@ int main()
 
 		// Test Case 1 - Assertion that allocator aligns correctly
 		DoubleEndedStackAllocator testcase1(1024u);
-		void* tc1_address1 = allocator.Allocate(2, 4);
-		void* tc1_address2 = allocator.Allocate(2, 4);
+		void* tc1_address1 = allocator.AllocateBack(6, 4);
+		void* tc1_address2 = allocator.AllocateBack(6, 4);
+		allocator.FreeBack(tc1_address2);
 		uint32_t result = reinterpret_cast<char*>(tc1_address2) - reinterpret_cast<char*>(tc1_address1);
 		bool tc1_condition = (result == 4);
 		Tests::Test_Case_Success("Allocate aligns correctly", tc1_condition);
