@@ -290,7 +290,7 @@ public:
 	{
 		// Frees the given memory block by looking up the previous address and shifting m_current to its position.
 		uint32_t offset_ptr = *(reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE));
-		m_current = reinterpret_cast<char*>(m_begin) + offset_ptr;
+		m_current = reinterpret_cast<char*>(m_begin) + offset_ptr;		
 	}
 
 	void FreeBack(void* memory)
