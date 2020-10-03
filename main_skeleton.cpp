@@ -167,7 +167,7 @@ namespace Tests
 
 // Assignment functionality tests are going to be included here 
 
-#define WITH_DEBUG_CANARIES 1
+#define WITH_DEBUG_CANARIES 0
 
 /**
 * You work on your DoubleEndedStackAllocator. Stick to the provided interface, this is
@@ -200,7 +200,7 @@ public:
 #endif
 		
 		// If there is not enough memory, we return a nullptr
-		if (!FitsInAllocator(total_allocation_size, alignment)) return nullptr;
+		if (!FitsInAllocator(size, alignment)) return nullptr;
 
 		uint32_t offset = reinterpret_cast<char*>(m_current) - reinterpret_cast<char*>(m_begin);
 		
@@ -233,16 +233,14 @@ public:
 
 	void* AllocateBack(size_t size, size_t alignment)
 	{
-		uint32_t total_allocation_size = size + OFFSET_SIZE;
 		uint32_t front_memory_offset = OFFSET_SIZE;
 
 #if WITH_DEBUG_CANARIES
-		total_allocation_size += CANARY_SIZE * 2;
 		front_memory_offset += CANARY_SIZE;
 #endif
 
 		// If there is not enough memory, we return a nullptr
-		if (!FitsInAllocator(total_allocation_size, alignment)) return nullptr;
+		if (!FitsInAllocator(size + OFFSET_SIZE, alignment)) return nullptr;
 
 		uint32_t offset = reinterpret_cast<char*>(m_end) - reinterpret_cast<char*>(m_current_back);
 
@@ -325,18 +323,37 @@ public:
 
 	void Reset(void)
 	{
-		
+		m_current = m_begin;
+		m_current_back = m_end;
 	}
 
-	~DoubleEndedStackAllocator(void) {}
-
+	~DoubleEndedStackAllocator(void)
+	{
+		free(m_begin);
+	}
+	
 private:
 	void* m_begin;
 	void* m_end;
 	void* m_current;
 	void* m_current_back;
 		
-	bool FitsInAllocator(size_t size, size_t alignment) { return true; }
+	bool FitsInAllocator(size_t size, size_t alignment) {
+				
+		uint32_t front_memory_offset = OFFSET_SIZE;		
+#if WITH_DEBUG_CANARIES
+		front_memory_offset += CANARY_SIZE;
+#endif		
+		// Align address up with offset added, then revert offset so the actual user data is aligned
+		char* temp_current  = AlignUp(reinterpret_cast<char*>(m_current) + front_memory_offset, alignment) - front_memory_offset;		
+		temp_current += size;
+
+#if WITH_DEBUG_CANARIES
+		temp_current += CANARY_SIZE;
+#endif		
+
+		return temp_current <= reinterpret_cast<char*>(m_current_back);
+	}
 
 	// Aligns the pointer address up in respect to the specified alignment
 	char* AlignUp(char* address, size_t alignment)
@@ -363,17 +380,7 @@ int main()
 	{
 		// You can remove this, just showcasing how the test functions can be used
 		DoubleEndedStackAllocator allocator(1024u);
-		//Tests::Test_Case_Success("Allocate() returns nullptr", allocator.Allocate(32, 1) == nullptr);
-
-		// Test Case 1 - Assertion that allocator aligns correctly
-		//DoubleEndedStackAllocator testcase1(1024u);
-		//void* tc1_address1 = allocator.Allocate(6, 4);
-		//void* tc1_address2 = allocator.Allocate(6, 4);
-		//uint32_t result = reinterpret_cast<char*>(tc1_address2) - reinterpret_cast<char*>(tc1_address1);
-		//bool tc1_condition = (result == 4);
-		//Tests::Test_Case_Success("Allocate aligns correctly", tc1_condition);
-		// -------------------------------------------------------
-		//Tests::Test_Case_Success("Allocate() does not return nullptr", [&allocator]() { return Tests::VerifyAllocationBackSuccess(allocator, 32, 5); }());
+		
 		Tests::Test_Case_Success("Allocate() does not return nullptr", Tests::VerifyAllocationSuccess(allocator, 32, 4));
 		Tests::Test_Case_Success("AllocateBack() does not return nullptr", Tests::VerifyAllocationBackSuccess(allocator, 32, 4));
 		Tests::Test_Case_Success("Free() resets to the correct address", Tests::VerifyFreeSuccess(allocator, 32, 4));
