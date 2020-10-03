@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <ostream>
 #include <iostream>
+#include <assert.h>  
 
 #define OFFSET_SIZE sizeof(uint32_t)
 #define CANARY_SIZE sizeof(uint32_t)
@@ -166,7 +167,7 @@ namespace Tests
 
 // Assignment functionality tests are going to be included here 
 
-#define WITH_DEBUG_CANARIES 0
+#define WITH_DEBUG_CANARIES 1
 
 /**
 * You work on your DoubleEndedStackAllocator. Stick to the provided interface, this is
@@ -193,7 +194,7 @@ public:
 		uint32_t total_allocation_size = size + OFFSET_SIZE;
 		uint32_t front_memory_offset = OFFSET_SIZE;
 		
-#ifdef WITH_DEBUG_CANARIES
+#if WITH_DEBUG_CANARIES
 		total_allocation_size += CANARY_SIZE * 2;
 		front_memory_offset += CANARY_SIZE;
 #endif
@@ -214,7 +215,7 @@ public:
 		//set m_current to new address
 		m_current = reinterpret_cast<char*>(m_current) + front_memory_offset  + size;
 
-#ifdef WITH_DEBUG_CANARIES
+#if WITH_DEBUG_CANARIES
 		//place DEADBEEF at the front of the allocated memory
 		uint32_t* front_debug_canaray = m_current_uint + 1;
 		*front_debug_canaray = 0xDEADBEEF;
@@ -235,7 +236,7 @@ public:
 		uint32_t total_allocation_size = size + OFFSET_SIZE;
 		uint32_t front_memory_offset = OFFSET_SIZE;
 
-#ifdef WITH_DEBUG_CANARIES
+#if WITH_DEBUG_CANARIES
 		total_allocation_size += CANARY_SIZE * 2;
 		front_memory_offset += CANARY_SIZE;
 #endif
@@ -248,7 +249,7 @@ public:
 		// Create space for the allocated object
 		m_current_back = reinterpret_cast<char*>(m_current_back) - size;
 
-#ifdef WITH_DEBUG_CANARIES
+#if WITH_DEBUG_CANARIES
 		 m_current_back = reinterpret_cast<char*>(m_current_back) - CANARY_SIZE;
 #endif
 		
@@ -258,7 +259,7 @@ public:
 
 		// Store offset in first bytes
 
-#ifdef WITH_DEBUG_CANARIES
+#if WITH_DEBUG_CANARIES
 		uint32_t* m_current_back_uint = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(m_current_back) - OFFSET_SIZE - CANARY_SIZE);
 #else
 		uint32_t* m_current_back_uint = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(m_current_back) - OFFSET_SIZE);
@@ -267,7 +268,7 @@ public:
 		*m_current_back_uint = offset;
 
 
-#ifdef WITH_DEBUG_CANARIES
+#if WITH_DEBUG_CANARIES
 		//place DEADBEEF at the front of the allocated memory
 		uint32_t* front_debug_canaray = m_current_back_uint + 1;
 		*front_debug_canaray = 0xDEADBEEF;
@@ -288,9 +289,21 @@ public:
 
 	void Free(void* memory)
 	{
+		// ASSERT if a canary was changed
 		// Frees the given memory block by looking up the previous address and shifting m_current to its position.
-		uint32_t offset_ptr = *(reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE));
-		m_current = reinterpret_cast<char*>(m_begin) + offset_ptr;
+
+
+#if WITH_DEBUG_CANARIES
+		uint32_t* front_canary = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - CANARY_SIZE);
+		uint32_t* back_canary = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(m_current) - CANARY_SIZE);
+		assert("canaries violated -> memory leak", *front_canary == 0xDEADBEEF && *back_canary == 0xDEADBEEF);
+
+		uint32_t* offset_ptr = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE - CANARY_SIZE);
+#else 		
+		uint32_t* offset_ptr = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE);
+#endif
+
+		m_current = reinterpret_cast<char*>(m_begin) + *offset_ptr;
 	}
 
 	void FreeBack(void* memory)
