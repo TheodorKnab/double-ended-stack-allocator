@@ -98,11 +98,11 @@ namespace Tests
 	template<class A>
 	bool VerifyFreeBackSuccess(A& allocator, size_t size, size_t alignment)
 	{
-		void* mem = allocator.Allocate(size, alignment);
+		void* mem = allocator.AllocateBack(size, alignment);
 
-		allocator.Free(mem);
+		allocator.FreeBack(mem);
 
-		void* mem2 = allocator.Allocate(size, alignment);
+		void* mem2 = allocator.AllocateBack(size, alignment);
 
 		if (mem != mem2)
 		{
@@ -289,15 +289,13 @@ public:
 
 	void Free(void* memory)
 	{
-		// ASSERT if a canary was changed
 		// Frees the given memory block by looking up the previous address and shifting m_current to its position.
-
-
+		
+		// ASSERT if a canary was changed
 #if WITH_DEBUG_CANARIES
 		uint32_t* front_canary = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - CANARY_SIZE);
 		uint32_t* back_canary = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(m_current) - CANARY_SIZE);
 		assert("canaries violated -> memory leak", *front_canary == 0xDEADBEEF && *back_canary == 0xDEADBEEF);
-
 		uint32_t* offset_ptr = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE - CANARY_SIZE);
 #else 		
 		uint32_t* offset_ptr = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE);
@@ -308,8 +306,21 @@ public:
 
 	void FreeBack(void* memory)
 	{
-		uint32_t offset_ptr = *(reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE));
-		m_current_back = reinterpret_cast<char*>(m_end) - offset_ptr;
+
+#if WITH_DEBUG_CANARIES
+		uint32_t* back_canary = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - CANARY_SIZE);
+		uint32_t* offset_ptr = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE - CANARY_SIZE);
+#else 		
+		uint32_t* offset_ptr = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE);
+#endif
+
+		m_current_back = reinterpret_cast<char*>(m_end) - *offset_ptr;
+
+#if WITH_DEBUG_CANARIES
+		uint32_t* front_canary = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(m_current_back) - CANARY_SIZE);
+		assert("canaries violated -> memory leak", *front_canary == 0xDEADBEEF && *back_canary == 0xDEADBEEF);
+#endif
+
 	}
 
 	void Reset(void)
