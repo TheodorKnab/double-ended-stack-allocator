@@ -152,8 +152,42 @@ namespace Tests
 	// Allocate back uint_32
 	   
 	// Overwrite Canaries Front (Modify DEADBEEF)
+	template<class A>
+	bool VerifyFreeWithModifiedFrontCanary(A& allocator, size_t size, size_t alignment)
+	{
+		void* mem = allocator.Allocate(size, alignment);
+		uint32_t* modified = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(mem) - CANARY_SIZE);
+		*modified = 0xBEEFBABE;
+
+		try {
+			allocator.Free(mem);
+		}
+		catch (const char* msg) {
+			return true;
+		}
+
+		printf("[Error]: Free -> Modified canary not correctly detected!\n");
+		return false;
+	}
 	   
 	// Overwrite Canaries Back (Modify DEADBEEF)
+	template<class A>
+	bool VerifyFreeWithModifiedBackCanary(A& allocator, size_t size, size_t alignment)
+	{
+		void* mem = allocator.Allocate(size, alignment);
+		uint32_t* modified = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(mem) + size);
+		*modified = 0xBEEFBABE;
+
+		try {
+			allocator.Free(mem);
+		}
+		catch (const char* msg) {
+			return true;
+		}
+
+		printf("[Error]: Free -> Modified canary not correctly detected!\n");
+		return false;
+	}
 	   
 	// Alignment + Size > max_size
 	   
@@ -167,7 +201,7 @@ namespace Tests
 
 // Assignment functionality tests are going to be included here 
 
-#define WITH_DEBUG_CANARIES 0
+#define WITH_DEBUG_CANARIES 1
 
 /**
 * You work on your DoubleEndedStackAllocator. Stick to the provided interface, this is
@@ -293,7 +327,11 @@ public:
 #if WITH_DEBUG_CANARIES
 		uint32_t* front_canary = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - CANARY_SIZE);
 		uint32_t* back_canary = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(m_current) - CANARY_SIZE);
-		assert("canaries violated -> memory leak", *front_canary == 0xDEADBEEF && *back_canary == 0xDEADBEEF);
+		//assert(*front_canary == 0xDEADBEEF && *back_canary == 0xDEADBEEF);
+		if (*front_canary != 0xDEADBEEF || *back_canary != 0xDEADBEEF)
+		{
+			throw "DEADBEEF is not dead anymore";
+		}
 		uint32_t* offset_ptr = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE - CANARY_SIZE);
 #else 		
 		uint32_t* offset_ptr = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE);
@@ -316,7 +354,11 @@ public:
 
 #if WITH_DEBUG_CANARIES
 		uint32_t* front_canary = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(m_current_back) - CANARY_SIZE);
-		assert("canaries violated -> memory leak", *front_canary == 0xDEADBEEF && *back_canary == 0xDEADBEEF);
+		//assert("canaries violated -> memory leak", *front_canary == 0xDEADBEEF && *back_canary == 0xDEADBEEF);
+		if (*front_canary != 0xDEADBEEF || *back_canary != 0xDEADBEEF)
+		{
+			throw "DEADBEEF is not dead anymore";
+		}
 #endif
 
 	}
@@ -385,6 +427,8 @@ int main()
 		Tests::Test_Case_Success("AllocateBack() does not return nullptr", Tests::VerifyAllocationBackSuccess(allocator, 32, 4));
 		Tests::Test_Case_Success("Free() resets to the correct address", Tests::VerifyFreeSuccess(allocator, 32, 4));
 		Tests::Test_Case_Success("FreeBack() resets to the correct address", Tests::VerifyFreeBackSuccess(allocator, 32, 4));
+		Tests::Test_Case_Success("Free() detects modified front canary", Tests::VerifyFreeWithModifiedFrontCanary(allocator, 32, 4));
+		Tests::Test_Case_Success("Free() detects modified back canary", Tests::VerifyFreeWithModifiedBackCanary(allocator, 32, 4));
 	}
 
 	// You can do whatever you want here in the main function
