@@ -1,6 +1,6 @@
 /**
-* Exercise: "DoubleEndedStackAllocator with Canaries" OR "Growing DoubleEndedStackAllocator with Canaries (VMEM)"
-* Group members: Robert Barta (gsXXXX), Theodor Knab (gsXXXX), Oliver Schmidt (gsXXXX)
+* Exercise: "DoubleEndedStackAllocator with Canaries"
+* Group members: Robert Barta (gs19m002), Theodor Knab (gs19m006), Oliver Schmidt (gs19m013)
 **/
 
 #include "stdio.h"
@@ -464,6 +464,8 @@ namespace Tests
 class DoubleEndedStackAllocator
 {
 public:
+	// The minimum size has to be larger than 12 to ensure, that there is enough room for metadata.
+	// The maximum supported size is 'only' 2^32 byte
 	DoubleEndedStackAllocator(size_t max_size)
 	{
 		assert(max_size > 12); //if the allocator is smaller than 12, there is not enough room for even one set of metadata (if canaries are enabled)
@@ -473,8 +475,9 @@ public:
 		m_current_back = m_end;
 	}
 
-	// Overhead of 4 bytes normally
-	// Overhead of 12 bytes with debug canaries
+	// Each allocation has a overhead of 4 bytes normally (used for offset from previous memory block)
+	// Each allocation has a overhead of 12 bytes with debug canaries (used for offset + 2 * canaries)
+	// Allocation larger than 2^32 are NOT supported!
 	void* Allocate(size_t size, size_t alignment)
 	{
 		assert(size != 0 && alignment != 0);
@@ -517,7 +520,10 @@ public:
 
 		return allocated_address;
 	}
-
+	
+	// Each allocation has a overhead of 4 bytes normally (used for offset from previous memory block)
+	// Each allocation has a overhead of 12 bytes with debug canaries (used for offset + 2 * canaries)
+	// Allocation larger than 2^32 are NOT supported!
 	void* AllocateBack(size_t size, size_t alignment)
 	{
 		assert(size != 0 && alignment != 0);
@@ -573,11 +579,10 @@ public:
 		return allocated_address;
 	}
 
+	// The user has to free the memory in the reversed order as it was allocated (LIFO)	
 	void Free(void* memory)
 	{
 		// Frees the given memory block by looking up the previous address and shifting m_current to its position.
-
-		
 		if (memory == nullptr) return;
 		assert(m_begin < memory && memory < m_end);
 		
@@ -586,10 +591,6 @@ public:
 		uint32_t* front_canary = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - CANARY_SIZE);
 		uint32_t* back_canary = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(m_current) - CANARY_SIZE);
 		assert(*front_canary == 0xDEADBEEF && *back_canary == 0xDEADBEEF);
-		if (*front_canary != 0xDEADBEEF || *back_canary != 0xDEADBEEF)
-		{
-			throw "DEADBEEF is not dead anymore";
-		}
 		uint32_t* offset_ptr = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE - CANARY_SIZE);
 #else 		
 		uint32_t* offset_ptr = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(memory) - OFFSET_SIZE);
@@ -598,6 +599,8 @@ public:
 		m_current = reinterpret_cast<char*>(m_begin) + *offset_ptr;
 	}
 
+
+	// The user has to free the memory in the reversed order as it was allocated (LIFO)	
 	void FreeBack(void* memory)
 	{
 		if (memory == nullptr) return;
@@ -615,14 +618,10 @@ public:
 #if WITH_DEBUG_CANARIES
 		uint32_t* front_canary = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(m_current_back) - CANARY_SIZE);
 		assert(*front_canary == 0xDEADBEEF && *back_canary == 0xDEADBEEF);
-		if (*front_canary != 0xDEADBEEF || *back_canary != 0xDEADBEEF)
-		{
-			throw "DEADBEEF is not dead anymore";
-		}
 #endif
-
 	}
 
+	
 	void Reset(void)
 	{
 		m_current = m_begin;
@@ -640,6 +639,8 @@ private:
 	void* m_current;
 	void* m_current_back;
 		
+	// Helper method which asserts that the specified allocation (size with alignment) fits
+	// in the allocator.
 	bool FitsInAllocator(size_t size, size_t alignment) {
 				
 		uint32_t front_memory_offset = OFFSET_SIZE;		
@@ -662,7 +663,6 @@ private:
 	{
 		const size_t alignment_mask = ~(alignment - 1);
 		address = reinterpret_cast<char*>(reinterpret_cast<uint64_t>(address + (alignment - 1)) & alignment_mask);
-
 		return address;
 	}
 
@@ -704,8 +704,11 @@ int main()
 		Tests::Test_Case_Success("FreeBack() resets to the correct address", Tests::VerifyFreeSuccess(allocator, 1012, 4));
 		Tests::Test_Case_Success("Fully filled allocator from front and back with canaries", Tests::VerifyFrontBackHalfFullAllocated(allocator, 500));
 		Tests::Test_Case_Success("Test if a allocator with max_size = max(uint32_t) works", Tests::VerifyMaxSizeAllocator<DoubleEndedStackAllocator>());
+
+
+		//As these test cases use assert statements, they have to be tested individually
 		
-		//Tests::Test_Case_Success("Fully filled allocator from front and back with canaries", Tests::VerifyAssertOnMaxSizeSmallerEqualsTwelve<DoubleEndedStackAllocator>());
+		//Tests::Test_Case_Success("Allocator with max_size smaller 12", Tests::VerifyAssertOnMaxSizeSmallerEqualsTwelve<DoubleEndedStackAllocator>());
 		//Tests::Test_Case_Success("Assert when Allocate() called with size = 0", Tests::VerifyAssertOnAllocateSizeZero(allocator));
 		//Tests::Test_Case_Success("Assert when AllocateBack() called with size = 0", Tests::VerifyAssertOnAllocateBackSizeZero(allocator));
 		//Tests::Test_Case_Success("Assert when Allocate() called with alignment = 0", Tests::VerifyAssertOnAllocateAlignmentZero(allocator));
@@ -722,6 +725,6 @@ int main()
 
 	// Here the assignment tests will happen - it will test basic allocator functionality. 
 	{
-
+		
 	}
 }
